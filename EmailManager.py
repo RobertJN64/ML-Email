@@ -15,7 +15,7 @@ def createEmail(subject, text, sender, reciever, attachments):
 
     #add attachments
     for attachment in attachments:
-        with open(attachment) as f:
+        with open(attachment, 'rb') as f:
             part = MIMEBase("application", "octet-stream")
             part.set_payload(f.read())
         encoders.encode_base64(part)

@@ -1,6 +1,6 @@
-import GeneticEvolution as ge
-import GeneticNets as gn
-import netrender as nr
+import MachineLearning.GeneticEvolution as ge
+import MachineLearning.GeneticNets as gn
+import MachineLearning.NetRender as nr
 
 #config
 fname = "titanic.json"
@@ -37,7 +37,7 @@ for genCount in range(0, generations):
 
 best, row = ge.getHighest(bests)
 gn.saveNets([best], "generic-net-save", "Nets from file: " + fname, 2)
-screen.stop()
+nr.stop()
 
 print(time.time() - startTime)
-sleep(10)
+

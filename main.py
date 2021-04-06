@@ -1,11 +1,13 @@
 #imports
-import GeneticEvolution as ge
-import GeneticNets as gn
-import netrender as nr
+import MachineLearning.GeneticEvolution as ge
+import MachineLearning.GeneticNets as gn
+import MachineLearning.NetRender as nr
 import EmailManager
+import ReportGenerator
 
 import smtplib, ssl
 from imbox import Imbox
+import shutil
 
 from os import path as ospath, makedirs as mkdrs
 from time import sleep
@@ -45,7 +47,7 @@ while True:
     messages = mail.messages(sent_to='robertjnml+auto@gmail.com', unread=True)  # defaults to inbox
 
     for uid, message in messages:
-
+        #region Extract Files
         mail.mark_seen(uid)
         print(message.subject)
         attachments = message.attachments
@@ -84,7 +86,8 @@ while True:
         if "rawdata.csv" in names:
             ge.processCSV(projectFolder + '/rawdata.csv', projectFolder + '/traindata.json', ["Output"], ["Ignore"], mode="FirstRowReplace")
 
-        #okay, ready to start machine learning!
+        #endregion
+        #region okay, ready to start machine learning!
         try:
             dataset, trainset, testset, metadata = ge.loadDataset(projectFolder + "/traindata.json", testSize)
 
@@ -95,7 +98,7 @@ while True:
             break
 
         try:
-            DB = gn.Random(metadata["inputs"], metadata["outputs"], populationSize, midWidth, midDepth, bias=True)
+            DB = gn.Random(metadata.inputs, metadata.outputs, populationSize, midWidth, midDepth, bias=True)
             bests = []
 
         except Exception as e:
@@ -113,7 +116,7 @@ while True:
                 bests.append([best, truescore])
                 DB = ge.evolve(DB, evoRate)
                 screen.bestNet(best, bestscore, truescore)
-            screen.stop()
+            nr.stop()
         except Exception as e:
             print("Error during learning: ", str(e))
             break
@@ -126,21 +129,32 @@ while True:
             print("Error during saving file: ", str(e))
             break
 
+        #endregion
+
+        try:
+            if runTestSet:
+                best = gn.loadNets(projectFolder + "/net-save")[0][0]
+                if "testdata.csv" in names:
+                    ge.processCSV(projectFolder + '/testdata.csv', projectFolder + '/testdata.json', ["Output"], ["Ignore"], mode="FirstRowReplace")
+                ge.runTestSet(projectFolder + "/testdata.json", best, projectFolder + "/submission.csv")
+
+        except Exception as e:
+            print("Error during test set: ", str(e))
+            break
+
         #try:
-        if runTestSet:
-            best = gn.loadNets(projectFolder + "/net-save")[0][0]
-            if "testdata.csv" in names:
-                ge.processCSV(projectFolder + '/testdata.csv', projectFolder + '/testdata.json', ["Output"], ["Ignore"], mode="FirstRowReplace")
-            ge.runTestSet(projectFolder + "/testdata.json", best, projectFolder + "/submission.csv")
+        ReportGenerator.GenerateReport(projectFolder)
 
         #except Exception as e:
-            #print("Error during test set: ", str(e))
+            #print("Error during report generation: ", str(e))
             #break
 
         try:
             attachmentsList = [projectFolder + "/net-save.json"]
             if runTestSet:
                 attachmentsList.append(projectFolder + "/submission.csv")
+            shutil.make_archive(projectFolder + "/ReportZip", 'zip', projectFolder+"/Report")
+            attachmentsList.append(projectFolder + "/ReportZip.zip")
 
             text = "We have finished your machine learning project. Files are attached."
             message_to_send = EmailManager.createEmail("Machine Learning Project: " + message.subject + " finished!", text, username, sender, attachmentsList)

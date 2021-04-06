@@ -1,0 +1,9 @@
+Header
+Info
+Data
+Data-Predictability-Graph
+High-Variance-Graph | {"add-data": true}
+High-Variance-Graph | {"add-data": true}
+High-Prediction-Graph
+High-Prediction-Graph
+NonLinear-Variance-Graph
