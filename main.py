@@ -14,7 +14,7 @@ from time import sleep
 
 #region CONFIG
 #config
-allowed_files = ["traindata.json", "testdata.csv", "testdata.json", "rawdata.csv"]
+allowed_files = ["traindata.json", "testdata.csv", "testdata.json", "rawdata.csv", "template.txt", "config.json"]
 
 #connect to alt email account
 host = "imap.gmail.com"
@@ -143,7 +143,13 @@ while True:
             break
 
         #try:
-        ReportGenerator.GenerateReport(projectFolder)
+        configfolder = "ReportSettings/config.json"
+        if "config.json" in names:
+            configfolder = projectFolder + "/config.json"
+        templatefoler = "ReportSettings/Template.txt"
+        if "template.txt" in names:
+            templatefoler = projectFolder + "/template.txt"
+        ReportGenerator.GenerateReport(projectFolder, configfolder, templatefoler)
 
         #except Exception as e:
             #print("Error during report generation: ", str(e))

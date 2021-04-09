@@ -1,5 +1,6 @@
 import MachineLearning.GeneticNets as gn
 import MachineLearning.GeneticEvolution as ge
+import MachineLearning.Graphing as MLGraphing
 import PythonExtended.Graphing as graph
 #import PythonExtended.DataStructures as d
 import PythonExtended.Math as m
@@ -8,8 +9,7 @@ import matplotlib.pyplot as pyplot
 import json
 import warnings
 import os
-import shutil #temporary for testing
-#import datetime #needed after testing
+import shutil
 import time
 
 # region GLOBAL VARS + classes
@@ -19,6 +19,8 @@ class ReportInfo:
         self.usedvariance = []
         self.usedpredictability = []
         self.nonlinear = []
+        self.netfile = ""
+        self.datafile = ""
 
 class datapoint:
     def __init__(self, x, y, z, color=None):
@@ -34,64 +36,8 @@ class datapoint:
                 abs(self.z - dp.z) < zdif and
                 (self.color == dp.color or not useColor))
 
-class graphpoint:
-    def __init__(self, x, y, z, color="blue"):
-        self.x = x
-        self.y = y
-        self.z = z
-
-        self.color = color
-        self.posicount = z
-        self.count = 1
-
 #endregion
 #region data management functions
-#order of output colors
-colors = [[(255,0,0), 'red'],
-          [(0,128,0), 'green'],
-          [(255,255,0), 'yellow'],
-          [(0,0,0), 'black']]
-
-def clump(points, xdif, ydif, zdif, percent=False):
-    outpoints = []
-    for pointa in points:
-        found = False
-        for pointb in outpoints:
-            if (abs(pointa.x - pointb.x) < xdif and
-                abs(pointa.y - pointb.y) < ydif and
-                (abs(pointa.z - pointb.z) < zdif or percent)):
-                found = True
-                pointb.count += 1
-                pointb.posicount += pointa.z
-        if not found:
-            outpoints.append(graphpoint(pointa.x, pointa.y, pointa.z, pointa.color))
-    return outpoints
-
-def colorize(points, colormode, percents):
-    for point in points:
-        if percents:
-            point.z = (point.posicount / point.count) * 100
-        if colormode == "none":
-            point.color = "blue"
-        elif colormode == "data-file":
-            if percents:
-                point.color = (1 - m.scale(0, point.z, 100, 0, 1),
-                               0.5 - m.scale(0, point.z, 100, 0, 0.5),
-                               m.scale(0, point.z, 100, 0, 1))
-            else:
-                if point.z > 0:
-                    point.color = "blue"
-                else:
-                    point.color = "orange"
-        elif colormode == "score":
-            # TODO - score coloring
-            pass
-        elif colormode == "net-score":
-            # TODO - net coloring
-            pass
-        else:
-            warnings.warn("Color mode not found: " + str(colormode))
-
 def colorinfotext(colormode, percents):
     out = ""
     if colormode == "data-file":
@@ -100,117 +46,31 @@ def colorinfotext(colormode, percents):
         out += '<p>Color mode is based on point value vs net output given those input variables. Blue is 1, orange is 0.</p>\n'
     elif colormode == "net-score":
         out += '<p>Color mode is based on true net score given that point. Blue is 1, orange is 0.</p>\n'
+    elif colormode == "var-error":
+        out += "<p>Points that these variables get wrong (compared to the full net) are highlighted in orange</p>\n"
     if percents:
         out += '<p>Data points are clumped into percents.'
     return out
+
+def graphcommand(net, netfile, usedata, xaxis, yaxis, zaxis=None, datafile=None, clump=None, usepercents=None, colormode=None):
+    outjson = {"net-file": netfile,
+               "use-data": usedata,
+               "xaxis": xaxis,
+               "yaxis": yaxis}
+    if zaxis is None:
+        outjson["zaxis"] = net.classifier_output
+    else:
+        outjson["zaxis"] = zaxis
+    if datafile is not None:
+        outjson["data-file"] = datafile
+    if clump is not None:
+        outjson["clump"] = clump
+    if usepercents is not None:
+        outjson["usepercents"] = usepercents
+    if colormode is not None:
+        outjson["color-mode"] = colormode
+    return json.dumps(outjson)
 #endregion
-
-#region GraphingFuncs
-def GraphNet(net, xaxis, yaxis, fig):
-    zaxis = ' & '.join(net.outputs)
-    xs = []
-    ys = []
-    zs = []
-    outcolors = []
-    count = 0
-    for name in net.outputs:
-        xvals = []
-        yvals = []
-        zvals = []
-        outcolors.append(colors[count][1])
-        count += 1
-        x = -1
-        while x <= 1:
-            y = -1
-            while y <= 1:
-                xvals.append(x)
-                yvals.append(y)
-
-                net.reset()
-                for inName in net.inputs:
-                    if inName == xaxis:
-                        net.setNode(inName, x)
-                    elif inName == yaxis:
-                        net.setNode(inName, y)
-                    else:
-                        net.setNode(inName, 0)
-                net.process()
-                zvals.append(net.getNode(name))
-                y += 0.1
-            x += 0.1
-        xs.append(xvals)
-        ys.append(yvals)
-        zs.append(zvals)
-    graph.multiGraph3D(xs, ys, zs, outcolors, xaxis, yaxis, zaxis, xaxis + " by " + yaxis, plt=fig)
-
-def GraphNetData(net, data, xaxis, yaxis, zaxis, defvalue, useclump, usepercents, colormode, fig):
-    #region handle net
-    netxvals = []
-    netyvals = []
-    netzvals = []
-
-    xmin = data["inputs"][xaxis]["min"]
-    xmax = data["inputs"][xaxis]["max"]
-    ymin = data["inputs"][yaxis]["min"]
-    ymax = data["inputs"][yaxis]["max"]
-    zmin = data["outputs"][zaxis]["min"]
-    zmax = data["outputs"][zaxis]["max"]
-
-    x = -1
-    while x <= 1:
-        y = -1
-        while y <= 1:
-            netxvals.append(m.scale(-1, x, 1, xmin, xmax))
-            netyvals.append(m.scale(-1, y, 1, ymin, ymax))
-            net.reset()
-            for inName in net.inputs:
-                if inName == xaxis:
-                    net.setNode(inName, x)
-                elif inName == yaxis:
-                    net.setNode(inName, y)
-                else:
-                    net.setNode(inName, defvalue)
-            net.process()
-            if usepercents:
-                netzvals.append(m.scale(-1, net.getNode(zaxis), 1, 0, 100))
-            else:
-                netzvals.append(m.scale(-1, net.getNode(zaxis), 1, zmin, zmax))
-
-            y += 0.1
-        x += 0.1
-    #endregion
-    #region handle data
-    datapoints = []
-    for item in data["data"]:
-        datapoints.append(graphpoint(item[xaxis], item[yaxis], item[zaxis]))
-
-    if useclump or usepercents:
-        datapoints = clump(datapoints, (xmax-xmin)/20, (ymax-ymin)/20, (zmax-zmin)/20, usepercents)
-
-    colorize(datapoints, colormode, usepercents)
-
-    dataxvals = []
-    datayvals = []
-    datazvals = []
-    datacolorvals = []
-    datasizevals = []
-    for point in datapoints:
-        dataxvals.append(point.x)
-        datayvals.append(point.y)
-        datazvals.append(point.z)
-        datacolorvals.append(point.color)
-        datasizevals.append(point.count)
-
-    size = None
-    if useclump or usepercents:
-        size = datasizevals
-
-    if usepercents:
-        zaxis += "%"
-
-    #endregion
-    graph.Graph3D(netxvals,netyvals,netzvals,"red", xaxis, yaxis, zaxis, xaxis + " by " + yaxis, plt=fig)
-    graph.Graph3D(dataxvals, datayvals, datazvals, datacolorvals, xaxis, yaxis, zaxis, xaxis + " by " + yaxis, plt=fig, s=size)
 
 def GraphData3Axis(data, xaxis, yaxis, zaxis, coloraxis, useclump, fig):
     xvals = []
@@ -247,16 +107,16 @@ def GraphData3Axis(data, xaxis, yaxis, zaxis, coloraxis, useclump, fig):
 
     graph.Graph3D(xvals, yvals, zvals, colorvals, xaxis, yaxis, zaxis, xaxis + " by " + yaxis + " by " + zaxis, plt=fig,s=svals)
 
-#endregion
-
 #region simple generators
 def GenerateStart(title="MachineLearning Report"):
     return ('<!DOCTYPE html>\n' +
             '<html lang="en">\n' +
             '<head>\n' +
             '<meta charset="UTF-8">\n' +
-            '<title>' + title + '</title>\n'
-            '</head>\n'
+            '<title>' + title + '</title>\n' +
+            '<style>div {border: 2px;border-color: black;border-radius: 5px;border-style: solid; padding-left: 10px; margin-bottom: 5px} </style>\n' +
+            '<script>function alertjson(item) { alert(item.className); } </script>\n'
+            '</head>\n' +
             '<body>\n')
 
 def GenerateEnd():
@@ -264,7 +124,7 @@ def GenerateEnd():
             '</html>\n')
 
 def GenerateDivStart():
-    return '<div style="border: 2px;border-color: black;border-radius: 5px;border-style: solid; padding-left: 10px; margin-bottom: 5px">\n'
+    return '<div>\n'
 
 def GenerateDivEnd():
     return '</div>\n'
@@ -277,6 +137,20 @@ def GenerateCustomText(config):
 
 def GenerateCustomHeader(config):
     return "<h3>" + config["text"] + "</h3>\n"
+
+def GenerateGraphHTML(net, header, fname, xaxis, yaxis, adddata, colormode, clump, usepercents, excludelist):
+    global reportinfo
+    out = "<h3>" + header + "</h3>\n"
+    out += '<img src="' + fname + '" onclick="alertjson(this);"' + " class='"
+    if adddata:
+        out += str(graphcommand(net, reportinfo.netfile, True, xaxis, yaxis, datafile=reportinfo.datafile, clump=clump,
+                                usepercents=usepercents, colormode=colormode)) + "'>\n"
+        out += colorinfotext(colormode, usepercents)
+    else:
+        out += str(graphcommand(net, reportinfo.netfile, False, xaxis, yaxis)) + "'>\n"
+    if len(excludelist) > 0:
+        out += "<p>Ignored variables: " + ', '.join(excludelist) + "</p>\n"
+    return out
 #endregion
 
 #region generators
@@ -378,35 +252,35 @@ def GenerateDataPredictionGraph(data, outaxis, config, directory, fname):
     fig.savefig(directory + '/' + fname, bbox_inches='tight')
     pyplot.close(fig)
     out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
+    out += '<img src="' + fname + '">\n'
     out += colorinfotext("data-file", False)
     return out
 
 def GenerateCustomNetGraph(net, config, directory, fname):
+    global reportinfo
     if config["x"] is None or config["y"] is None:
         warnings.warn("Custom net graph missing configuration")
     fig = pyplot.figure()
     plt = fig.add_subplot(111, projection='3d')
-    GraphNet(net, config["x"], config["y"], plt)
+    MLGraphing.GraphNet(net, config["x"], config["y"], plt)
     if config["customize"]:
         pyplot.show()
     fig.savefig(directory + '/' + fname, bbox_inches = 'tight')
     pyplot.close(fig)
-    out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
+    out = GenerateGraphHTML(net, config["header"], fname, config["x"], config["y"], False, "", False, False, [])
     return out
 
 def GenerateCustomNetDataGraph(net, data, config, directory, fname):
+    global reportinfo
     fig = pyplot.figure()
     plt = fig.add_subplot(111, projection='3d')
-    GraphNetData(net, data, config["x"], config["y"], list(net.outputs.keys())[0], 0, config["clump"], config["percents"], config["color"], plt)
+    MLGraphing.GraphNetData(net, data, config["x"], config["y"], net.classifier_output, 0, config["clump"], config["percents"], config["color"], plt)
     if config["customize"]:
         pyplot.show()
     fig.savefig(directory + '/' + fname, bbox_inches='tight')
     pyplot.close(fig)
-    out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
-    out += colorinfotext(config["color"], config["percents"])
+    out = GenerateGraphHTML(net, config["header"], fname, config["x"], config["y"], True, config["color"], config["clump"],
+                            config["percents"], [])
     return out
 
 def GenerateDataGraph3Axis(data, config, directory, fname):
@@ -418,7 +292,7 @@ def GenerateDataGraph3Axis(data, config, directory, fname):
     fig.savefig(directory + '/' + fname, bbox_inches='tight')
     pyplot.close(fig)
     out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
+    out += '<img src="' + fname + '" onclick="alertjson(this);">\n'
     return out
 
 def GenerateHighVarianceGraph(net, data, config, directory, fname):
@@ -441,7 +315,7 @@ def GenerateHighVarianceGraph(net, data, config, directory, fname):
                 else:
                     net.setNode(name, 0)
             net.process()
-            outputs.append(net.getOutput()[list(net.outputs.keys())[0]])
+            outputs.append(net.getOutput()[net.classifier_output])
             x += 0.1
         dif = max(outputs) - min(outputs)
         if dif > best:
@@ -458,19 +332,15 @@ def GenerateHighVarianceGraph(net, data, config, directory, fname):
     fig = pyplot.figure()
     plt = fig.add_subplot(111, projection='3d')
     if not config["add-data"]:
-        GraphNet(net, xaxis, yaxis, plt)
+        MLGraphing.GraphNet(net, xaxis, yaxis, plt)
     else:
-        GraphNetData(net, data, xaxis, yaxis, list(net.outputs.keys())[0], 0, config["clump"], config["percents"], config["color"], plt)
+        MLGraphing.GraphNetData(net, data, xaxis, yaxis, net.classifier_output, 0, config["clump"], config["percents"], config["color"], plt)
     if config["customize"]:
         pyplot.show()
     fig.savefig(directory + '/' + fname, bbox_inches='tight')
     pyplot.close(fig)
-    out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
-    if config["add-data"]:
-        out += colorinfotext(config["color"], config["percents"])
-    if len(reportinfo.usedvariance) > 0:
-        out += "<p>Ignored variables: " + ', '.join(reportinfo.usedvariance) + "</p>\n"
+    out = GenerateGraphHTML(net, config["header"], fname, xaxis, yaxis, config["add-data"], config["color"],
+                            config["clump"], config["percents"], reportinfo.usedvariance)
     reportinfo.usedvariance.append(xaxis)
     reportinfo.usedvariance.append(yaxis)
     return out
@@ -517,26 +387,21 @@ def GenerateHighPredictionGraph(net, data, config, directory, fname):
     plt = fig.add_subplot(111, projection='3d')
 
     if not config["add-data"]:
-        GraphNet(net, xaxis, yaxis, plt)
+        MLGraphing.GraphNet(net, xaxis, yaxis, plt)
     else:
-        GraphNetData(net, data, xaxis, yaxis, list(net.outputs.keys())[0], 0, config["clump"], config["percents"], config["color"], plt)
+        MLGraphing.GraphNetData(net, data, xaxis, yaxis, net.classifier_output, 0, config["clump"], config["percents"], config["color"], plt)
 
     if config["customize"]:
         pyplot.show()
     fig.savefig(directory + '/' + fname, bbox_inches='tight')
     pyplot.close(fig)
-    out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
+    out = GenerateGraphHTML(net, config["header"], fname, xaxis, yaxis, config["add-data"], config["color"],
+                            config["clump"], config["percents"], reportinfo.usedpredictability)
     if reportinfo.totalaccuracy is None:
         reportinfo.totalaccuracy = ge.Test_Obj(net, data["data"], config["comparison-mode"]) * 100 /len(data["data"])
     localscore = best*100 / len(data["data"])
-    out += ("<p>This gets " + str(round(localscore,2)) + "% of the data items correct." +
-            "This is " + str(round(localscore*100/reportinfo.totalaccuracy,2)) + "% of the max accuracy.</p>\n")
-    #endregion
-    if config["add-data"]:
-        out += colorinfotext(config["color"], config["percents"])
-    if len(reportinfo.usedpredictability) > 0:
-        out += "<p>Ignored variables: " + ', '.join(reportinfo.usedpredictability) + "</p>\n"
+    out += ("<p>This gets " + str(round(localscore, 2)) + "% of the data items correct." +
+            "This is " + str(round(localscore * 100 / reportinfo.totalaccuracy, 2)) + "% of the max accuracy.</p>\n")
     reportinfo.usedpredictability.append(xaxis)
     reportinfo.usedpredictability.append(yaxis)
     return out
@@ -559,7 +424,7 @@ def GenerateNonLinearVarianceGraph(net, data, config, directory, fname):
                 else:
                     net.setNode(name, 0)
             net.process()
-            outputs.append(net.getOutput()[list(net.outputs.keys())[0]])
+            outputs.append(net.getOutput()[net.classifier_output])
             x += 0.1
         variance.append(max(outputs)-min(outputs))
         inputs.append(inputa)
@@ -618,20 +483,16 @@ def GenerateNonLinearVarianceGraph(net, data, config, directory, fname):
     fig = pyplot.figure()
     plt = fig.add_subplot(111, projection='3d')
     if not config["add-data"]:
-        GraphNet(net, xaxis, yaxis, plt)
+        MLGraphing.GraphNet(net, xaxis, yaxis, plt)
     else:
-        GraphNetData(net, data, xaxis, yaxis, list(net.outputs.keys())[0], 0, config["clump"], config["percents"], config["color"], plt)
+        MLGraphing.GraphNetData(net, data, xaxis, yaxis, net.classifier_output, 0, config["clump"], config["percents"], config["color"], plt)
 
     if config["customize"]:
         pyplot.show()
     fig.savefig(directory + '/' + fname, bbox_inches='tight')
     pyplot.close(fig)
-    out = "<h3>" + config["header"] + "</h3>\n"
-    out += '<img src="' + fname + '"</img>\n'
-    if config["add-data"]:
-        out += colorinfotext(config["color"], config["percents"])
-    if len(reportinfo.nonlinear) > 0:
-        out += "<p>Ignored variables: " + ', '.join(reportinfo.nonlinear) + "</p>\n"
+    out = GenerateGraphHTML(net, config["header"], fname, xaxis, yaxis, config["add-data"], config["color"],
+                            config["clump"], config["percents"], reportinfo.nonlinear)
     reportinfo.nonlinear.append(xaxis)
     reportinfo.nonlinear.append(yaxis)
     return out + bonustext
@@ -639,22 +500,18 @@ def GenerateNonLinearVarianceGraph(net, data, config, directory, fname):
 #endregion
 
 reportinfo = ReportInfo()
-def GenerateReport(projectFolder):
+def GenerateReport(projectFolder, configfolder="ReportSettings/config.json", templatefolder="ReportSettings/Template.txt"):
     global reportinfo
     reportinfo = ReportInfo()
     #region load config and template
     with open("ReportSettings/defconfig.json") as f:
         defconfig = json.load(f)
 
-    with open("ReportSettings/config.json") as f:
+    with open(configfolder) as f:
         custconfig = json.load(f)
 
     #endregion
-    #region assert config structure
-    if "template" not in custconfig:
-        warnings.warn("Config file missing template")
-        return
-    #endregion
+
     #region load net + data + template
     net = gn.loadNets(projectFolder + '/net-save')[0][0]
     data = None
@@ -662,7 +519,7 @@ def GenerateReport(projectFolder):
         with open(projectFolder + '/traindata.json') as f:
             data = json.load(f)
 
-    with open(custconfig["template"]) as f:
+    with open(templatefolder) as f:
         template = f.readlines()
 
     for i in range(0, len(template)):

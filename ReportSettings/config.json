@@ -1,7 +1,4 @@
 {
-  "net-file": "none",
-  "template": "ReportSettings/Template.txt",
-  "data-file": "none",
   "use-data": true,
   "color": "default",
   "percents": "default",
